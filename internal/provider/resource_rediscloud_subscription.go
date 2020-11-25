@@ -25,6 +25,9 @@ func resourceRedisCloudSubscription() *schema.Resource {
 		UpdateContext: resourceRedisCloudSubscriptionUpdate,
 		DeleteContext: resourceRedisCloudSubscriptionDelete,
 
+		SchemaVersion:  1,
+		StateUpgraders: nil, // TODO - change `regions` from a set to a list
+
 		Importer: &schema.ResourceImporter{
 			StateContext: func(ctx context.Context, d *schema.ResourceData, meta interface{}) ([]*schema.ResourceData, error) {
 				subId, err := strconv.Atoi(d.Id())
@@ -140,7 +143,7 @@ func resourceRedisCloudSubscription() *schema.Resource {
 						},
 						"region": {
 							Description: "Cloud networking details, per region (single region or multiple regions for Active-Active cluster only)",
-							Type:        schema.TypeSet,
+							Type:        schema.TypeList,
 							Required:    true,
 							ForceNew:    true,
 							MinItems:    1,
@@ -162,17 +165,18 @@ func resourceRedisCloudSubscription() *schema.Resource {
 									"preferred_availability_zones": {
 										Description: "List of availability zones used",
 										Type:        schema.TypeList,
-										Required:    true,
 										ForceNew:    true,
+										Optional:    true,
+										Computed:    true,
+										MinItems:    1,
 										Elem: &schema.Schema{
 											Type: schema.TypeString,
 										},
 									},
 									"networking_deployment_cidr": {
-										Description: "Deployment CIDR mask",
-										Type:        schema.TypeString,
-										// TODO this needs to be ForceNew as it can't be updated, but cannot also be Computed
-										// TODO need to see what the returned value is when only using redis internal account
+										Description:      "Deployment CIDR mask",
+										Type:             schema.TypeString,
+										ForceNew:         true,
 										Optional:         true,
 										Computed:         true,
 										ValidateDiagFunc: validateDiagFunc(validation.IsCIDR),
@@ -670,19 +674,22 @@ func buildCreateCloudProviders(providers interface{}) ([]*subscriptions.CreateCl
 		}
 
 		createRegions := make([]*subscriptions.CreateRegion, 0)
-		if regions := providerMap["region"].(*schema.Set).List(); len(regions) != 0 {
+		if regions := providerMap["region"].([]interface{}); len(regions) != 0 {
 
 			for _, region := range regions {
 				regionMap := region.(map[string]interface{})
 
 				regionStr := regionMap["region"].(string)
 				multipleAvailabilityZones := regionMap["multiple_availability_zones"].(bool)
-				preferredAZs := regionMap["preferred_availability_zones"].([]interface{})
 
 				createRegion := subscriptions.CreateRegion{
-					Region:                     redis.String(regionStr),
-					MultipleAvailabilityZones:  redis.Bool(multipleAvailabilityZones),
-					PreferredAvailabilityZones: interfaceToStringSlice(preferredAZs),
+					Region:                    redis.String(regionStr),
+					MultipleAvailabilityZones: redis.Bool(multipleAvailabilityZones),
+				}
+
+				preferredAZs := regionMap["preferred_availability_zones"].([]interface{})
+				if len(preferredAZs) > 0 {
+					createRegion.PreferredAvailabilityZones = interfaceToStringSlice(preferredAZs)
 				}
 
 				if v, ok := regionMap["networking_deployment_cidr"]; ok && v != "" {
@@ -1017,6 +1024,7 @@ func flattenCloudDetails(cloudDetails []*subscriptions.CloudDetail) []map[string
 		var regions []interface{}
 		for _, currentRegion := range currentCloudDetail.Regions {
 
+			// TODO this needs to be fixed as there are multiple `currentRegion.Networking` if `multiple_availability_zones` is true
 			regionMapString := map[string]interface{}{
 				"region":                       currentRegion.Region,
 				"multiple_availability_zones":  currentRegion.MultipleAvailabilityZones,

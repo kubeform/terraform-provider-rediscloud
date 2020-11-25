@@ -215,7 +215,6 @@ resource "rediscloud_subscription" "example" {
     region {
       region = "eu-west-1"
       networking_deployment_cidr = "10.0.0.0/24"
-      preferred_availability_zones = ["eu-west-1a"]
     }
   }
 
@@ -261,7 +260,6 @@ resource "rediscloud_subscription" "example" {
     region {
       region = "eu-west-1"
       networking_deployment_cidr = "10.0.0.0/24"
-      preferred_availability_zones = ["eu-west-1a"]
     }
   }
 
