@@ -178,20 +178,38 @@ func resourceRedisCloudSubscription() *schema.Resource {
 										Type:             schema.TypeString,
 										ForceNew:         true,
 										Optional:         true,
-										Computed:         true,
 										ValidateDiagFunc: validateDiagFunc(validation.IsCIDR),
 									},
 									"networking_vpc_id": {
 										Description: "Either an existing VPC Id (already exists in the specific region) or create a new VPC (if no VPC is specified)",
 										Type:        schema.TypeString,
 										ForceNew:    true,
-										Optional:    true,
-										Default:     "",
-									},
-									"networking_subnet_id": {
-										Description: "The subnet that the subscription deploys into",
-										Type:        schema.TypeString,
 										Computed:    true,
+										Optional:    true,
+									},
+									"network": {
+										Description: "List of availability zones used",
+										Type:        schema.TypeList,
+										Computed:    true,
+										Elem: &schema.Resource{
+											Schema: map[string]*schema.Schema{
+												"networking_subnet_id": {
+													Description: "The subnet that the subscription deploys into",
+													Type:        schema.TypeString,
+													Computed:    true,
+												},
+												"networking_deployment_cidr": {
+													Description:      "Deployment CIDR mask",
+													Type:             schema.TypeString,
+													Computed:         true,
+												},
+												"networking_vpc_id": {
+													Description: "Either an existing VPC Id (already exists in the specific region) or create a new VPC (if no VPC is specified)",
+													Type:        schema.TypeString,
+													Computed:    true,
+												},
+											},
+										},
 									},
 								},
 							},
@@ -470,12 +488,19 @@ func resourceRedisCloudSubscriptionRead(ctx context.Context, d *schema.ResourceD
 		return diag.FromErr(err)
 	}
 
-	allowlist, err := flattenSubscriptionAllowlist(ctx, subId, api)
+	providers, err := buildCreateCloudProviders(d.Get("cloud_provider"))
 	if err != nil {
 		return diag.FromErr(err)
 	}
-	if err := d.Set("allowlist", allowlist); err != nil {
-		return diag.FromErr(err)
+	// CIDR allowlist is not allowed for Redis Labs internal resources subscription.
+	if len(providers) > 0 && redis.IntValue(providers[0].CloudAccountID) != 1 {
+		allowlist, err := flattenSubscriptionAllowlist(ctx, subId, api)
+		if err != nil {
+			return diag.FromErr(err)
+		}
+		if err := d.Set("allowlist", allowlist); err != nil {
+			return diag.FromErr(err)
+		}
 	}
 
 	flatDbs, err := flattenDatabases(ctx, subId, d.Get("database").(*schema.Set).List(), api)
