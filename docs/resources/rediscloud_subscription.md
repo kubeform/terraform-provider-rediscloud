@@ -227,7 +227,13 @@ The `database` block has these attributes:
 
 The `region` block has these attributes:
 
+* `networks` - List of generated network configuration
+
+The `networks` block has these attributes:
+
 * `networking_subnet_id` - The subnet that the subscription deploys into
+* `networking_deployment_cidr` - Deployment CIDR mask for the generated
+* `networking_vpc_id` - VPC id for the generated network
 
 ## Import
 

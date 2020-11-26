@@ -3,6 +3,11 @@ package provider
 import (
 	"context"
 	"fmt"
+	"log"
+	"regexp"
+	"strconv"
+	"time"
+
 	"github.com/RedisLabs/rediscloud-go-api/redis"
 	"github.com/RedisLabs/rediscloud-go-api/service/cloud_accounts"
 	"github.com/RedisLabs/rediscloud-go-api/service/databases"
@@ -11,10 +16,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
-	"log"
-	"regexp"
-	"strconv"
-	"time"
 )
 
 func resourceRedisCloudSubscription() *schema.Resource {
@@ -25,8 +26,7 @@ func resourceRedisCloudSubscription() *schema.Resource {
 		UpdateContext: resourceRedisCloudSubscriptionUpdate,
 		DeleteContext: resourceRedisCloudSubscriptionDelete,
 
-		SchemaVersion:  1,
-		StateUpgraders: nil, // TODO - change `regions` from a set to a list
+		SchemaVersion: 1,
 
 		Importer: &schema.ResourceImporter{
 			StateContext: func(ctx context.Context, d *schema.ResourceData, meta interface{}) ([]*schema.ResourceData, error) {
@@ -187,8 +187,8 @@ func resourceRedisCloudSubscription() *schema.Resource {
 										Computed:    true,
 										Optional:    true,
 									},
-									"network": {
-										Description: "List of availability zones used",
+									"networks": {
+										Description: "List of networks used",
 										Type:        schema.TypeList,
 										Computed:    true,
 										Elem: &schema.Resource{
@@ -199,9 +199,9 @@ func resourceRedisCloudSubscription() *schema.Resource {
 													Computed:    true,
 												},
 												"networking_deployment_cidr": {
-													Description:      "Deployment CIDR mask",
-													Type:             schema.TypeString,
-													Computed:         true,
+													Description: "Deployment CIDR mask",
+													Type:        schema.TypeString,
+													Computed:    true,
 												},
 												"networking_vpc_id": {
 													Description: "Either an existing VPC Id (already exists in the specific region) or create a new VPC (if no VPC is specified)",
@@ -484,7 +484,7 @@ func resourceRedisCloudSubscriptionRead(ctx context.Context, d *schema.ResourceD
 		return diag.FromErr(err)
 	}
 
-	if err := d.Set("cloud_provider", flattenCloudDetails(subscription.CloudDetails)); err != nil {
+	if err := d.Set("cloud_provider", flattenCloudDetails(subscription.CloudDetails, d, true)); err != nil {
 		return diag.FromErr(err)
 	}
 
@@ -1041,22 +1041,36 @@ func isNil(i interface{}) bool {
 	return false
 }
 
-func flattenCloudDetails(cloudDetails []*subscriptions.CloudDetail) []map[string]interface{} {
+func flattenCloudDetails(cloudDetails []*subscriptions.CloudDetail, v *schema.ResourceData, resource bool) []map[string]interface{} {
 	var cdl []map[string]interface{}
 
 	for _, currentCloudDetail := range cloudDetails {
 
 		var regions []interface{}
-		for _, currentRegion := range currentCloudDetail.Regions {
+		for i, currentRegion := range currentCloudDetail.Regions {
 
-			// TODO this needs to be fixed as there are multiple `currentRegion.Networking` if `multiple_availability_zones` is true
 			regionMapString := map[string]interface{}{
 				"region":                       currentRegion.Region,
 				"multiple_availability_zones":  currentRegion.MultipleAvailabilityZones,
 				"preferred_availability_zones": currentRegion.PreferredAvailabilityZones,
-				"networking_deployment_cidr":   currentRegion.Networking[0].DeploymentCIDR,
 				"networking_vpc_id":            currentRegion.Networking[0].VPCId,
-				"networking_subnet_id":         currentRegion.Networking[0].SubnetID,
+				"networks":                     flattenNetworks(currentRegion.Networking),
+			}
+
+			if resource {
+				var hclCidr *string
+
+				hclCidr = currentRegion.Networking[0].DeploymentCIDR
+				if currentRegion.MultipleAvailabilityZones != nil && *currentRegion.MultipleAvailabilityZones  {
+					// Read from the HCL as we can't determine the original CIDR that was used for multi-az
+					hclRegions := v.Get("cloud_provider").([]interface{})[0].([]interface{})
+					if i < len(hclRegions) {
+						hclRegion := hclRegions[i].(map[string]interface{})
+						hclCidr = redis.String(hclRegion["networking_deployment_cidr"].(string))
+					}
+				}
+				regionMapString["networking_deployment_cidr"] = hclCidr
+
 			}
 
 			regions = append(regions, regionMapString)
@@ -1068,6 +1082,23 @@ func flattenCloudDetails(cloudDetails []*subscriptions.CloudDetail) []map[string
 			"region":           regions,
 		}
 		cdl = append(cdl, cdlMapString)
+	}
+
+	return cdl
+}
+
+func flattenNetworks(networks []*subscriptions.Networking) []map[string]interface{} {
+	var cdl []map[string]interface{}
+
+	for _, currentNetwork := range networks {
+
+		networkMapString := map[string]interface{}{
+			"networking_deployment_cidr": currentNetwork.DeploymentCIDR,
+			"networking_vpc_id":          currentNetwork.VPCId,
+			"networking_subnet_id":       currentNetwork.SubnetID,
+		}
+
+		cdl = append(cdl, networkMapString)
 	}
 
 	return cdl
