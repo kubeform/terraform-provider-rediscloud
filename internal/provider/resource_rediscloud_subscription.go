@@ -1063,10 +1063,13 @@ func flattenCloudDetails(cloudDetails []*subscriptions.CloudDetail, v *schema.Re
 				hclCidr = currentRegion.Networking[0].DeploymentCIDR
 				if currentRegion.MultipleAvailabilityZones != nil && *currentRegion.MultipleAvailabilityZones  {
 					// Read from the HCL as we can't determine the original CIDR that was used for multi-az
-					hclRegions := v.Get("cloud_provider").([]interface{})[0].(map[string]interface{})["region"].([]interface{})
-					if i < len(hclRegions) {
-						hclRegion := hclRegions[i].(map[string]interface{})
-						hclCidr = redis.String(hclRegion["networking_deployment_cidr"].(string))
+					cloudProvider := v.Get("cloud_provider").([]interface{})
+					if len(cloudProvider) > 0 {
+						hclRegions := cloudProvider[0].(map[string]interface{})["region"].([]interface{})
+						if i < len(hclRegions) {
+							hclRegion := hclRegions[i].(map[string]interface{})
+							hclCidr = redis.String(hclRegion["networking_deployment_cidr"].(string))
+						}
 					}
 				}
 				regionMapString["networking_deployment_cidr"] = hclCidr
