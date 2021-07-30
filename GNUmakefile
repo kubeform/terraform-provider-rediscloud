@@ -35,7 +35,7 @@ install_local: build
 
 sweep:
 	@echo "WARNING: This will destroy infrastructure. Use only in development accounts."
-	go test ./internal/provider -v -sweep=ALL $(SWEEPARGS) -timeout 30m
+	go test ./rediscloud/provider -v -sweep=ALL $(SWEEPARGS) -timeout 30m
 
 tfproviderlint:
 	@go run github.com/bflad/tfproviderlint/cmd/tfproviderlint ./...
